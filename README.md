@@ -27,6 +27,10 @@ Use `/model` to select `claude-bridge/claude-opus-4-8`, `claude-bridge/claude-op
 
 Behind the scenes, pi's tools are bridged to Claude Code but it should all work like normal in pi. Bash commands get a 120-second default timeout (matching Claude Code's default) since pi's bash has no timeout by default. Skills in pi are copied over to Claude Code's system prompt so should work as they would with any other pi provider.
 
+**Thinking and effort:** on adaptive-thinking models (Opus 4.6/4.7/4.8, Sonnet 4.6) pi's `reasoning` slider sets the API `effort` tier, and `off` disables the reasoning phase entirely by passing `--thinking disabled`. The effort sent when thinking is off defaults to `high` and is configurable via `provider.effortWhenReasoningOff`. 
+
+`xhigh` reasoning resolves differently per model: on Opus 4.6 and Sonnet 4.6 (no real `xhigh` tier, top is `max`) it maps to `max`; on Opus 4.7/4.8 it maps to a genuine `xhigh` tier below `max`. Anthropic's `max` overthinks and costs more — pick it deliberately, not as a default.
+
 **1M Context:** all models default to 200k context. To enable 1M context, configure `provider.plan` and/or `provider.longContextExtraUsage` as described in [Configuration](#configuration).
 
 ## AskClaude Tool
@@ -46,7 +50,7 @@ You could also create skills or add something to AGENTS.md to e.g. "Always call 
 - **`prompt`** — the question or task for Claude Code
 - **`mode`** — `read` (default, read files and search/fetch on web), `none`, or `full` (read+write+bash, disable this mode with `allowFullMode: false` in config)
 - **`model`** — `opus` (default), `sonnet`, `haiku`, or a full model ID
-- **`thinking`** — effort level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
+- **`thinking`** — effort level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Omit for `high` on adaptive-thinking models (deterministic); Haiku and unknown models send no effort when omitted. `off` disables the reasoning phase but still sends effort (see `provider.effortWhenReasoningOff`).
 - **`isolated`** — when `true`, Claude gets a clean session with no conversation history (default: `false`)
 
 ## Configuration
@@ -79,8 +83,9 @@ Config: `~/.pi/agent/claude-bridge.json` (global) or `.pi/claude-bridge.json` (p
 - `appendSkills` — forward pi's skills block into the system prompt (default `true`)
 
 `provider`:
-- `plan` (default `"pro"`) — set to `"max"` to enable Opus with 1M context (also for Team Premium, Enterprise pay-as-you-go, or the Anthropic API). Leave `"pro"` for Pro, Team Standard, or Enterprise subscription seats. Only affects Opus.
-- `longContextExtraUsage` — set to `true` to enable 1M on all capable models even if they would cost "extra usage" credits. Sonnet 1M costs credits on every plan; Opus 1M costs credits on Pro but is included on Max, so on Max set `plan` instead.
+- `plan` (default `"pro"`) — set to `"max"` if your plan includes Opus 1M at no extra cost (Max, Team, or Enterprise). Leave `"pro"` on Pro, where Opus 1M requires usage credits (see `longContextExtraUsage`). Only affects Opus; Sonnet 1M always needs credits regardless of plan.
+- `longContextExtraUsage` — set to `true` to enable 1M on all capable models even if they would cost "extra usage" credits. Sonnet 1M costs credits on every plan; Opus 1M costs credits on Pro but is included on Max/Team/Enterprise, so on those plans set `plan: "max"` instead.
+- `effortWhenReasoningOff` (default `"high"`) — effort sent when pi's reasoning level is `off` on an adaptive-thinking model. One of `low`, `medium`, `high`, `xhigh`, `max`.
 - `appendSystemPrompt` — append pi's AGENTS.md and skills (default `true`)
 - `settingSources` — CC filesystem settings to load; only applied when `appendSystemPrompt: false`
 - `strictMcpConfig` — block MCP servers from `~/.claude.json` / `.mcp.json` (default `true`). Cloud MCP (Gmail/Drive via claude.ai OAuth) is always blocked.

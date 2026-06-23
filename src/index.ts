@@ -1,7 +1,7 @@
 import { calculateCost, getModels, StringEnum, type AssistantMessage, type AssistantMessageEventStream, type Context, type Model, type SimpleStreamOptions, type Tool } from "@earendil-works/pi-ai";
 import * as piAi from "@earendil-works/pi-ai";
 import { buildSessionContext, compact, keyHint, type CompactionEntry, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { createSdkMcpServer, query, type EffortLevel, type SDKMessage, type SDKUserMessage, type SettingSource } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, type SDKMessage, type SDKUserMessage, type SettingSource } from "@anthropic-ai/claude-agent-sdk";
 import type { Base64ImageSource, ContentBlockParam, MessageParam } from "@anthropic-ai/sdk/resources";
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
@@ -10,7 +10,7 @@ import { appendFileSync, mkdirSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.js";
-import { applyLongContext, applyOneMDisplayNames, buildModels, claudeCodeModelId, hasOneMContext, resolveModel as _resolveModel } from "./models.js";
+import { applyLongContext, applyOneMDisplayNames, buildModels, buildThinkingExtraArgs, claudeCodeModelId, defaultAskClaudeReasoning, hasOneMContext, resolveEffort, resolveModel as _resolveModel } from "./models.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, extractSkillsBlock } from "./skills.js";
 import { verifyWrittenSession as _verifyWrittenSession } from "./session-verify.js";
 import { extractAllToolResults as _extractAllToolResults, type McpResult } from "./extract-tool-results.js";
@@ -736,13 +736,6 @@ function updateUsage(output: AssistantMessage, usage: Record<string, number | un
 	debug(`usage: in=${output.usage.input} out=${output.usage.output} cacheRead=${output.usage.cacheRead} cacheWrite=${output.usage.cacheWrite} total=${output.usage.totalTokens} cachePct=${cachePct}% model=${model.id}`);
 }
 
-// --- Effort level mapping ---
-// Pi reasoning levels → CC SDK effort levels
-
-const REASONING_TO_EFFORT: Record<string, EffortLevel> = {
-	minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "max",
-};
-
 // --- Provider helpers: misc ---
 
 function mapStopReason(reason: string | undefined): "stop" | "length" | "toolUse" {
@@ -1190,19 +1183,19 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 	const strictMcpConfigEnabled = providerSettings.strictMcpConfig !== false;
 	const claudeExecutable = providerSettings.pathToClaudeCodeExecutable;
 
-	// Prefer the model's own thinkingLevelMap when present (pi-ai 0.72+ ships
-	// per-model overrides — e.g. opus-4-7 wants xhigh→xhigh, not xhigh→max).
-	// Fall back to our generic table for older pi-ai or unmapped levels.
-	const effort = options?.reasoning
-		? ((model as any).thinkingLevelMap?.[options.reasoning] as EffortLevel | undefined)
-			?? REASONING_TO_EFFORT[options.reasoning]
-		: undefined;
+	// resolveEffort handles: adaptive+off → thinking disabled + effortWhenReasoningOff;
+	// adaptive+level → effort from thinkingLevelMap or fallback; non-adaptive (haiku)
+	// → legacy table. See models.ts.
+	const { effort, thinkingOff } = resolveEffort(model.id, options?.reasoning as string | undefined, {
+		effortWhenOff: providerSettings.effortWhenReasoningOff ?? "high",
+		thinkingLevelMap: (model as any).thinkingLevelMap,
+	});
 
-	const extraArgs: Record<string, string | null> = { model: claudeCodeModelId(model, longContextExtraUsageIds.has(model.id)) };
-	if (strictMcpConfigEnabled) extraArgs["strict-mcp-config"] = null;
-	// Opus 4.7 defaults thinking.display to "omitted" (empty thinking text in stream).
-	// Force summarized so thinking_delta events arrive. See anthropics/claude-agent-sdk-python#830.
-	if (effort) extraArgs["thinking-display"] = "summarized";
+	const extraArgs: Record<string, string | null> = {
+		model: claudeCodeModelId(model, longContextExtraUsageIds.has(model.id)),
+		...(strictMcpConfigEnabled ? { "strict-mcp-config": null } : {}),
+		...buildThinkingExtraArgs(effort, thinkingOff),
+	};
 
 	// Suppress claude.ai cloud MCP servers (Figma/Canva/etc. auto-discovered via OAuth
 	// when the user is logged into Anthropic). These are a separate code path from
@@ -1236,7 +1229,7 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 
 	debug("provider: fresh query",
 		`model=${model.id} msgs=${context.messages.length} tools=${mcpTools.length}`,
-		`resume=${resumeSessionId?.slice(0, 8) ?? "none"} effort=${effort ?? "default"}`,
+		`resume=${resumeSessionId?.slice(0, 8) ?? "none"} thinking=${thinkingOff ? "off" : "on"} effort=${effort ?? "default"}`,
 		`appendSys=${appendSystemPrompt} strictMcp=${strictMcpConfigEnabled}`,
 		`prompt=${promptText.slice(0, 60)}${promptBlocks ? " [+images]" : ""}`);
 
@@ -1436,20 +1429,31 @@ async function promptAndWait(
 	const skillsBlock = options?.appendSkills !== false && options?.systemPrompt
 		? extractSkillsBlock(options.systemPrompt) : undefined;
 
-	// Effort
-	const effort = options?.thinking && options.thinking !== "off"
-		? REASONING_TO_EFFORT[options.thinking] : undefined;
+	// Omitted thinking defaults to "high" on adaptive models (deterministic):
+	// previously omitting sent no effort/thinking and CC fell back to its own
+	// default (xhigh on Opus 4.7, but non-deterministic — settings.json could
+	// change it). "high" is Anthropic's recommended starting point and avoids
+	// "max", which pi-ai maps xhigh→max on the 4.6 models (no real xhigh tier).
+	// Non-adaptive models (haiku, unknown) keep the old behavior — send no
+	// effort and let CC pick — because they may not support the effort
+	// parameter at all.
+	const reasoning = options?.thinking ?? defaultAskClaudeReasoning(modelId);
+	const modelConfig = MODELS.find((m) => m.id === modelId);
+	const { effort, thinkingOff } = resolveEffort(modelId, reasoning, {
+		effortWhenOff: providerSettings.effortWhenReasoningOff ?? "high",
+		thinkingLevelMap: (modelConfig as any)?.thinkingLevelMap,
+	});
 
 	const claudeExecutable = providerSettings.pathToClaudeCodeExecutable;
 
 	const extraArgs: Record<string, string | null> = {
 		"strict-mcp-config": null,
 		model: cliModel,
+		...buildThinkingExtraArgs(effort, thinkingOff),
 	};
-	if (effort) extraArgs["thinking-display"] = "summarized";
 
 	debug("askClaude:",
-		`mode=${mode} model=${modelId} cliModel=${cliModel} effort=${effort ?? "default"}`,
+		`mode=${mode} model=${modelId} cliModel=${cliModel} thinking=${thinkingOff ? "off" : "on"} effort=${effort ?? "default"}`,
 		`isolated=${options?.isolated ?? false} resume=${resumeSessionId?.slice(0, 8) ?? "none"}`,
 		`skills=${Boolean(skillsBlock)} promptLen=${prompt.length}`);
 
@@ -1690,7 +1694,7 @@ export default function (pi: ExtensionAPI) {
 			prompt: Type.String({ description: "The question or task for Claude Code. By default Claude sees the full conversation history. Don't research up front, let Claude explore." }),
 			mode: Type.Optional(StringEnum(modeValues, { description: modeDesc })),
 			model: Type.Optional(Type.String({ description: 'Claude model (e.g. "opus", "sonnet", "haiku", or full ID). Defaults to "opus".' })),
-			thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high", "xhigh"] as const, { description: "Thinking effort level. Omit to use Claude Code's default." })),
+			thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high", "xhigh"] as const, { description: "Reasoning effort. Omit for a sensible default (high). Use lower for faster/cheaper answers, higher for harder problems." })),
 			isolated: Type.Optional(Type.Boolean({ description: "When true, Claude sees only this prompt (clean session). When false (default), Claude sees the full conversation history." })),
 		});
 		pi.registerTool<typeof askClaudeParams>({

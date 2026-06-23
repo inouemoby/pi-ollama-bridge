@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MODEL_IDS_IN_ORDER, applyLongContext, applyOneMDisplayNames, buildModels, claudeCodeModelId, resolveModel } from "../src/models.js";
+import { MODEL_IDS_IN_ORDER, applyLongContext, applyOneMDisplayNames, buildModels, buildThinkingExtraArgs, claudeCodeModelId, defaultAskClaudeReasoning, isAdaptiveModel, resolveEffort, resolveModel, thinkingOffFor } from "../src/models.js";
 
 // Simulated pi-ai registry entry — extra fields mimic the ones pi-ai exposes
 // that must not leak into the provider-registered MODELS array.
@@ -171,5 +171,128 @@ describe("resolveModel", () => {
 		assert.equal(claudeCodeModelId(model, true), "claude-opus-4-8[1m]");
 		// Default (not opted in) → bare.
 		assert.equal(claudeCodeModelId(model, false), "claude-opus-4-8");
+	});
+});
+
+describe("isAdaptiveModel", () => {
+	it("flags Opus 4.6/4.7/4.8 and Sonnet 4.6 as adaptive", () => {
+		for (const id of ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+			assert.equal(isAdaptiveModel(id), true, `${id} should be adaptive`);
+		}
+	});
+
+	it("excludes Haiku (budget-based thinking, no effort knob)", () => {
+		assert.equal(isAdaptiveModel("claude-haiku-4-5"), false);
+	});
+
+	it("rejects unknown ids", () => {
+		assert.equal(isAdaptiveModel("gpt-9"), false);
+		assert.equal(isAdaptiveModel("claude-opus-4-9"), false);
+	});
+});
+
+describe("defaultAskClaudeReasoning", () => {
+	it("adaptive models default to high (safe across 4.6/4.7/4.8; avoids xhigh→max on 4.6)", () => {
+		for (const id of ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+			assert.equal(defaultAskClaudeReasoning(id), "high", `${id} should default to high`);
+		}
+	});
+
+	it("haiku defaults to undefined (no effort knob — send nothing, let CC pick)", () => {
+		assert.equal(defaultAskClaudeReasoning("claude-haiku-4-5"), undefined);
+	});
+
+	it("unknown models default to undefined (safe — may not support effort)", () => {
+		assert.equal(defaultAskClaudeReasoning("gpt-9"), undefined);
+		assert.equal(defaultAskClaudeReasoning("claude-opus-4-9"), undefined);
+	});
+});
+
+describe("thinkingOffFor", () => {
+	it("adaptive + undefined (pi slider off) → true", () => {
+		assert.equal(thinkingOffFor("claude-opus-4-7", undefined), true);
+	});
+
+	it("adaptive + literal \"off\" (AskClaude explicit) → true", () => {
+		assert.equal(thinkingOffFor("claude-opus-4-8", "off"), true);
+	});
+
+	it("adaptive + a real level → false", () => {
+		assert.equal(thinkingOffFor("claude-opus-4-7", "high"), false);
+		assert.equal(thinkingOffFor("claude-sonnet-4-6", "xhigh"), false);
+	});
+
+	it("non-adaptive (haiku) never reports off — reasoning gates its budget thinking", () => {
+		assert.equal(thinkingOffFor("claude-haiku-4-5", undefined), false);
+		assert.equal(thinkingOffFor("claude-haiku-4-5", "off"), false);
+	});
+
+	it("unknown model → false", () => {
+		assert.equal(thinkingOffFor("gpt-9", undefined), false);
+	});
+});
+
+describe("resolveEffort", () => {
+	const off = (modelId, reasoning, opts = {}) =>
+		resolveEffort(modelId, reasoning, { effortWhenOff: "high", ...opts });
+
+	it("adaptive + off → thinkingOff with effortWhenReasoningOff", () => {
+		assert.deepEqual(off("claude-opus-4-7", "off"), { effort: "high", thinkingOff: true });
+	});
+
+	it("adaptive + undefined (pi slider off) → same as explicit off", () => {
+		assert.deepEqual(off("claude-opus-4-7", undefined), { effort: "high", thinkingOff: true });
+	});
+
+	it("respects a custom effortWhenOff", () => {
+		assert.deepEqual(off("claude-opus-4-7", "off", { effortWhenOff: "xhigh" }), { effort: "xhigh", thinkingOff: true });
+	});
+
+	it("adaptive + xhigh prefers the model thinkingLevelMap (opus-4-7 → xhigh, opus-4-6 → max)", () => {
+		assert.equal(off("claude-opus-4-7", "xhigh", { thinkingLevelMap: { xhigh: "xhigh" } }).effort, "xhigh");
+		assert.equal(off("claude-opus-4-6", "xhigh", { thinkingLevelMap: { xhigh: "max" } }).effort, "max");
+		assert.equal(off("claude-opus-4-7", "xhigh", { thinkingLevelMap: { xhigh: "xhigh" } }).thinkingOff, false);
+	});
+
+	it("adaptive + xhigh with no map falls back to the table (max)", () => {
+		// Sonnet 4.6 ships no thinkingLevelMap; table maps xhigh → max.
+		assert.equal(off("claude-sonnet-4-6", "xhigh").effort, "max");
+	});
+
+	it("adaptive + low/medium/high fall through to the table", () => {
+		assert.equal(off("claude-opus-4-7", "low").effort, "low");
+		assert.equal(off("claude-opus-4-7", "medium").effort, "medium");
+		assert.equal(off("claude-opus-4-7", "high").effort, "high");
+	});
+
+	it("adaptive + minimal → low (table fallback, no hidden tier)", () => {
+		assert.equal(off("claude-opus-4-7", "minimal").effort, "low");
+		assert.equal(off("claude-opus-4-7", "minimal").thinkingOff, false);
+	});
+
+	it("haiku + undefined → no effort, thinkingOff false (legacy)", () => {
+		assert.deepEqual(off("claude-haiku-4-5", undefined), { effort: undefined, thinkingOff: false });
+	});
+
+	it("haiku + a level → table effort, thinkingOff false (legacy)", () => {
+		assert.deepEqual(off("claude-haiku-4-5", "high"), { effort: "high", thinkingOff: false });
+	});
+});
+
+describe("buildThinkingExtraArgs", () => {
+	it("thinkingOff → --thinking disabled (and no display flag)", () => {
+		assert.deepEqual(buildThinkingExtraArgs("high", true), { thinking: "disabled" });
+	});
+
+	it("effort set, thinkingOff false → summarized display", () => {
+		assert.deepEqual(buildThinkingExtraArgs("high", false), { "thinking-display": "summarized" });
+	});
+
+	it("no effort, thinkingOff false → empty (CC picks its default)", () => {
+		assert.deepEqual(buildThinkingExtraArgs(undefined, false), {});
+	});
+
+	it("thinkingOff wins over effort (disabled has nothing to display)", () => {
+		assert.deepEqual(buildThinkingExtraArgs("xhigh", true), { thinking: "disabled" });
 	});
 });
