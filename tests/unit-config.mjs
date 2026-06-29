@@ -8,7 +8,7 @@ import { loadConfig } from "../src/config.js";
 
 function withTempHome(fn) {
 	const oldHome = process.env.HOME;
-	const home = mkdtempSync(join(tmpdir(), "ollama-cloud-home-"));
+	const home = mkdtempSync(join(tmpdir(), "claude-bridge-home-"));
 	try {
 		process.env.HOME = home;
 		return fn(home);
@@ -21,11 +21,11 @@ function withTempHome(fn) {
 
 describe("loadConfig", () => {
 	it("loads project config from Pi's configured project directory", () => withTempHome(() => {
-		const cwd = mkdtempSync(join(tmpdir(), "ollama-cloud-project-"));
+		const cwd = mkdtempSync(join(tmpdir(), "claude-bridge-project-"));
 		try {
 			const configDir = join(cwd, CONFIG_DIR_NAME);
 			mkdirSync(configDir, { recursive: true });
-			writeFileSync(join(configDir, "ollama-cloud.json"), JSON.stringify({
+			writeFileSync(join(configDir, "claude-bridge.json"), JSON.stringify({
 				provider: { plan: "max" },
 				askClaude: { enabled: false },
 			}));
@@ -40,17 +40,17 @@ describe("loadConfig", () => {
 	}));
 
 	it("merges project config over global config", () => withTempHome((home) => {
-		const cwd = mkdtempSync(join(tmpdir(), "ollama-cloud-project-"));
+		const cwd = mkdtempSync(join(tmpdir(), "claude-bridge-project-"));
 		try {
 			const globalDir = join(home, ".pi", "agent");
 			const projectDir = join(cwd, CONFIG_DIR_NAME);
 			mkdirSync(globalDir, { recursive: true });
 			mkdirSync(projectDir, { recursive: true });
-			writeFileSync(join(globalDir, "ollama-cloud.json"), JSON.stringify({
+			writeFileSync(join(globalDir, "claude-bridge.json"), JSON.stringify({
 				provider: { plan: "pro", strictMcpConfig: true },
 				askClaude: { enabled: true, defaultMode: "read" },
 			}));
-			writeFileSync(join(projectDir, "ollama-cloud.json"), JSON.stringify({
+			writeFileSync(join(projectDir, "claude-bridge.json"), JSON.stringify({
 				provider: { plan: "max" },
 				askClaude: { enabled: false },
 			}));

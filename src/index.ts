@@ -20,22 +20,27 @@ import { dirname, join } from "path";
 //   ANTHROPIC_API_KEY=""           (empty, so the CLI's OAuth/anthropic paths are
 //                                   not used; the binary falls back to AUTH_TOKEN)
 //
-// `ollama-cloud` is registered as a pi provider (so /login stores the key in
-// ~/.pi/agent/auth.json under entry `ollama-cloud`). We read that file once at
+// The Ollama Cloud API key lives in ~/.pi/agent/auth.json under the entry
+// "ollama-cloud" (the upstream `pi-ollama-cloud` extension uses the same
+// storage slot, so /login ollama-cloud is the single place to set it). We read that file once at
 // module load and keep the key in a module-scope variable. The file path mirrors
 // what pi uses (getAgentDir() = ~/.pi/agent).
-const OLLAMA_CLOUD_BASE_URL = "https://ollama.com";
-const OLLAMA_CLOUD_PROVIDER_ID = "ollama-cloud";
+const CLAUDE_BRIDGE_BASE_URL = "https://ollama.com";
+// Key under which the Ollama Cloud API key is stored in ~/.pi/agent/auth.json.
+// This stays "ollama-cloud" because the same credential is also consumed by
+// the upstream `pi-ollama-cloud` extension (different provider, same backend).
+// Users run `pi -p "/login ollama-cloud"` to set it.
+const CLAUDE_BRIDGE_OLLAMA_AUTH_KEY = "ollama-cloud";
 
 function loadOllamaCloudApiKey(): string | undefined {
 	const authPath = join(homedir(), ".pi", "agent", "auth.json");
 	if (!existsSync(authPath)) return undefined;
 	try {
 		const raw = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, any>;
-		const entry = raw?.[OLLAMA_CLOUD_PROVIDER_ID];
+		const entry = raw?.[CLAUDE_BRIDGE_OLLAMA_AUTH_KEY];
 		if (entry && typeof entry.key === "string" && entry.key.length > 0) return entry.key;
 	} catch (e) {
-		console.error(`ollama-cloud: failed to read ${authPath}:`, e);
+		console.error(`claude-bridge: failed to read ${authPath}:`, e);
 	}
 	return undefined;
 }
@@ -47,7 +52,7 @@ function buildChildEnv(extra?: Record<string, string>): Record<string, string> {
 	const env: Record<string, string> = { ...(process.env as Record<string, string>) };
 	// Force the SDK to talk to Ollama Cloud. The `claude` binary inside the SDK
 	// only uses AUTH_TOKEN when ANTHROPIC_API_KEY is empty.
-	env.ANTHROPIC_BASE_URL = OLLAMA_CLOUD_BASE_URL;
+	env.ANTHROPIC_BASE_URL = CLAUDE_BRIDGE_BASE_URL;
 	env.ANTHROPIC_API_KEY = "";
 	if (ollamaCloudApiKey) {
 		env.ANTHROPIC_AUTH_TOKEN = ollamaCloudApiKey;
@@ -77,11 +82,11 @@ const newAssistantMessageEventStream: () => AssistantMessageEventStream =
 		: () => new _piAi.AssistantMessageEventStream();
 
 // --- Debug logging ---
-// OLLAMA_CLOUD_DEBUG=1 enables debug logging to ~/.pi/agent/ollama-cloud.log
+// CLAUDE_BRIDGE_DEBUG=1 enables debug logging to ~/.pi/agent/claude-bridge.log
 
-const DEBUG = process.env.OLLAMA_CLOUD_DEBUG === "1";
-const DEBUG_LOG_PATH = process.env.OLLAMA_CLOUD_DEBUG_PATH || join(homedir(), ".pi", "agent", "ollama-cloud.log");
-const DIAG_LOG_PATH = join(homedir(), ".pi", "agent", "ollama-cloud-diag.log");
+const DEBUG = process.env.CLAUDE_BRIDGE_DEBUG === "1";
+const DEBUG_LOG_PATH = process.env.CLAUDE_BRIDGE_DEBUG_PATH || join(homedir(), ".pi", "agent", "claude-bridge.log");
+const DIAG_LOG_PATH = join(homedir(), ".pi", "agent", "claude-bridge-diag.log");
 
 // Ensure log directories exist when debug is enabled
 if (DEBUG) {
@@ -108,7 +113,7 @@ function debug(...args: unknown[]) {
 	appendFileSync(DEBUG_LOG_PATH, `[${ts}] [${moduleInstanceId}] ${msg}\n`);
 }
 
-// Per-query CLI debug capture. When OLLAMA_CLOUD_DEBUG=1, ask the Claude Code
+// Per-query CLI debug capture. When CLAUDE_BRIDGE_DEBUG=1, ask the Claude Code
 // CLI subprocess to write its own debug log to a file we choose, and also
 // forward its stderr into our debug stream. Drops straight into the real SDK's
 // Options — see @anthropic-ai/claude-agent-sdk sdk.d.ts:1245 (debug, debugFile,
@@ -158,7 +163,7 @@ function diagDump(label: string, data: Record<string, unknown>) {
 //
 // On session_shutdown (including /reload), clearSession() resets this so a fresh
 // registration can occur for the next session.
-const ACTIVE_STREAM_SIMPLE_KEY = Symbol.for("ollama-cloud:activeStreamSimple");
+const ACTIVE_STREAM_SIMPLE_KEY = Symbol.for("claude-bridge:activeStreamSimple");
 
 const SDK_TO_PI_TOOL_NAME: Record<string, string> = {
 	read: "read", write: "write", edit: "edit", bash: "bash",
@@ -510,8 +515,8 @@ function verifyWrittenSession(
 		piUI?.notify(
 			`Session file issue: ${msg}\n` +
 			`cwd=${cwd} realpath=${safeRealpath(cwd)} CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? "(unset)"}\n` +
-			`Please copy and paste this message into a new issue at https://github.com/elidickinson/pi-ollama-cloud/issues/new` +
-			(DEBUG ? ` and attach ${DEBUG_LOG_PATH}` : ` (rerun with OLLAMA_CLOUD_DEBUG=1 to capture a debug log)`),
+			`Please copy and paste this message into a new issue at https://github.com/inouemoby/pi-claude-bridge/issues/new` +
+			(DEBUG ? ` and attach ${DEBUG_LOG_PATH}` : ` (rerun with CLAUDE_BRIDGE_DEBUG=1 to capture a debug log)`),
 			"warning",
 		);
 		diagDump("session_verify_fail", { msg, jsonlPath, cwd, realpath: safeRealpath(cwd), claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? null });
@@ -1672,7 +1677,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => clearSession("session_shutdown"));
 
 	pi.on("session_before_compact", async (event, ctx) => {
-		if (ctx.model?.baseUrl !== "ollama-cloud") return undefined;
+		if (ctx.model?.baseUrl !== "claude-bridge") return undefined;
 		debug(
 			`session_before_compact: takeover reason=${event.reason} willRetry=${event.willRetry} ` +
 			`isSplitTurn=${event.preparation.isSplitTurn} messages=${event.preparation.messagesToSummarize.length} ` +
@@ -1733,22 +1738,22 @@ export default function (pi: ExtensionAPI) {
 		g[ACTIVE_STREAM_SIMPLE_KEY] = streamClaudeAgentSdk;
 		if (!ollamaCloudApiKey) {
 			console.error(
-				`ollama-cloud: no API key for provider "${OLLAMA_CLOUD_PROVIDER_ID}" in ~/.pi/agent/auth.json. ` +
-					`Run \`pi -p "/login ollama-cloud"\` to set one. The Claude Agent SDK subprocess will fail ` +
+				`claude-bridge: no API key for auth entry "${CLAUDE_BRIDGE_OLLAMA_AUTH_KEY}" in ~/.pi/agent/auth.json. ` +
+					`Run \`pi -p "/login ${CLAUDE_BRIDGE_OLLAMA_AUTH_KEY}"\` to set one. The Claude Agent SDK subprocess will fail ` +
 					`with "Not logged in" until then.`,
 			);
 		}
 		pi.registerProvider(PROVIDER_ID, {
-			baseUrl: "ollama-cloud",
+			baseUrl: "claude-bridge",
 			apiKey: "not-used",
-			api: "ollama-cloud",
+			api: "claude-bridge",
 			models: registeredModels,
 			// Cast: pi-ai AssistantMessageEventStream diamond dep between pi-coding-agent and pi-agent-core
 			streamSimple: streamClaudeAgentSdk as any,
 		});
 	} else {
 		// Subsequent instance (subagent session): skip registration entirely.
-		// The subagent already has access to ollama-cloud models via the shared
+		// The subagent already has access to claude-bridge models via the shared
 		// ModelRegistry from the parent's registration. Calls to those models
 		// will route through the parent's streamSimple via the reentrant
 		// QueryContext stack mechanism.
@@ -1827,10 +1832,10 @@ export default function (pi: ExtensionAPI) {
 			},
 			async execute(_id, params, signal, onUpdate, ctx) {
 				// Guard: circular delegation
-				if (ctx.model?.baseUrl === "ollama-cloud") {
-					debug("askClaude: blocked circular delegation (active provider is ollama-cloud)");
+				if (ctx.model?.baseUrl === "claude-bridge") {
+					debug("askClaude: blocked circular delegation (active provider is claude-bridge)");
 					return {
-						content: [{ type: "text" as const, text: "Error: AskClaude cannot be used when the active provider is ollama-cloud — you're already running through the Claude Agent SDK." }],
+						content: [{ type: "text" as const, text: "Error: AskClaude cannot be used when the active provider is claude-bridge — you're already running through the Claude Agent SDK." }],
 						details: { error: true },
 					};
 				}

@@ -1,21 +1,21 @@
 {
-  "name": "pi-ollama-bridge",
+  "name": "pi-claude-bridge",
   "version": "0.5.0",
   "private": false,
-  "description": "Pi extension that uses the Claude Agent SDK as the agent runtime and Ollama Cloud as the model backend. Forked from pi-claude-bridge with Ollama Cloud models replacing the Claude model list.",
+  "description": "Pi extension that uses the Claude Agent SDK as the agent runtime and Ollama Cloud as the model backend. Forked from elidickinson/pi-claude-bridge with Ollama Cloud models replacing the Claude model list.",
   "keywords": [
     "pi-package",
     "pi",
     "extension",
     "ollama",
-    "ollama-cloud",
+    "claude-bridge",
     "claude-agent-sdk"
   ],
   "author": "inouemoby",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/inouemoby/pi-ollama-bridge.git"
+    "url": "git+https://github.com/inouemoby/pi-claude-bridge.git"
   },
   "engines": {
     "node": ">=20"

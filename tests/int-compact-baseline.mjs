@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { createRpcHarness } from "./lib/rpc-harness.mjs";
 
 const TIMEOUT = 180_000;
-const BRIDGE_MODEL = "ollama-cloud/minimax-m3";
+const BRIDGE_MODEL = "claude-bridge/minimax-m3";
 
 const testAgentDir = mkdtempSync(join(tmpdir(), "compact-baseline-agent-"));
 writeFileSync(join(testAgentDir, "settings.json"), JSON.stringify({

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const debugDir = mkdtempSync(join(tmpdir(), "sync-shared-session-debug-"));
-process.env.OLLAMA_CLOUD_DEBUG_PATH = join(debugDir, "ollama-cloud.log");
+process.env.CLAUDE_BRIDGE_DEBUG_PATH = join(debugDir, "claude-bridge.log");
 
 const { __test } = await import("../src/index.js");
 

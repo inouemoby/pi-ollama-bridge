@@ -2,7 +2,7 @@
 
 ## UNRELEASED
 
-- **Forked from pi-claude-bridge to pi-ollama-bridge** — replaced the Claude model list with Ollama Cloud models. pi's agent loop, compaction, tool dispatch, and session persistence are still routed through the Claude Agent SDK; only the LLM backend changes (Claude → Ollama Cloud via `ANTHROPIC_BASE_URL=https://ollama.com`). The provider id is now `ollama-cloud`. Configure `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (your Ollama Cloud API key), and `ANTHROPIC_API_KEY=""` before launching pi. Available models in `/model`:
+- **Forked from pi-claude-bridge (inouemoby fork)** — replaced the Claude model list with Ollama Cloud models. pi's agent loop, compaction, tool dispatch, and session persistence are still routed through the Claude Agent SDK; only the LLM backend changes (Claude → Ollama Cloud via `ANTHROPIC_BASE_URL=https://ollama.com`). The provider id is now `claude-bridge`. Configure `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (your Ollama Cloud API key, stored in `~/.pi/agent/auth.json` under the `ollama-cloud` entry), and `ANTHROPIC_API_KEY=""` before launching pi. Available models in `/model`:
   - `minimax-m3` (default, fast)
   - `kimi-k2.7-code` (code, 1T params)
   - `mistral-large-3:675b` (long context)

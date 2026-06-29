@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRpcHarness } from "./lib/rpc-harness.mjs";
 
-const BRIDGE_MODEL = "ollama-cloud/minimax-m3";
+const BRIDGE_MODEL = "claude-bridge/minimax-m3";
 const COMPACT_TIMEOUT = 120_000;
 const TEST_TIMEOUT = 240_000;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prompt cache efficiency test for pi-ollama-cloud.
+# Prompt cache efficiency test for pi-claude-bridge.
 # Runs a multi-turn conversation and verifies Anthropic prompt caching is working.
 # Expects: cacheRead grows across turns (system prompt + history are cache-hit),
 #   cacheWrite is small after the first turn (only new content is written).
@@ -20,11 +20,11 @@ LOGFILE="$LOGDIR/cache-test.ndjson"
 trap kill_descendants EXIT
 
 TMPFILE="$LOGDIR/cache-test-scratch.txt"
-rm -f "$TMPFILE" "$OLLAMA_CLOUD_DEBUG_PATH"
+rm -f "$TMPFILE" "$CLAUDE_BRIDGE_DEBUG_PATH"
 
 echo "Running 5-turn conversation (text + tool use)..."
 timeout 180 pi --no-session -ne -e "$DIR" \
-  --model "ollama-cloud/minimax-m3" \
+  --model "claude-bridge/minimax-m3" \
   --mode json \
   -p "The secret number is 42. Acknowledge briefly." \
      "Write the secret number to $TMPFILE. Just the number, nothing else." \
@@ -132,7 +132,7 @@ while IFS= read -r line; do
   if [ -n "$sid" ]; then
     SESSION_IDS+=("$sid")
   fi
-done < <(grep "syncResult:" "$OLLAMA_CLOUD_DEBUG_PATH" 2>/dev/null || true)
+done < <(grep "syncResult:" "$CLAUDE_BRIDGE_DEBUG_PATH" 2>/dev/null || true)
 
 UNIQUE_SIDS=$(printf "%s\n" "${SESSION_IDS[@]}" | sort -u | grep -c . || true)
 UNIQUE_SIDS=${UNIQUE_SIDS:-0}
@@ -175,6 +175,6 @@ if [ "$FAIL" -eq 0 ]; then
 else
   echo "FAIL: $FAIL assertions failed"
   echo "  Log: $LOGFILE"
-  echo "  Debug: $OLLAMA_CLOUD_DEBUG_PATH"
+  echo "  Debug: $CLAUDE_BRIDGE_DEBUG_PATH"
   exit 1
 fi

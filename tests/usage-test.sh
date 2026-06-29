@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A/B usage comparison: pi-ollama-cloud vs Claude Code direct.
+# A/B usage comparison: pi-claude-bridge vs Claude Code direct.
 # Runs the same conversation through both paths and compares
 # subscription usage delta and token metrics.
 #
@@ -129,11 +129,11 @@ echo "Turns: $NUM_TURNS"
 echo ""
 
 # ============================================================
-# Run A: pi-ollama-cloud
+# Run A: pi-claude-bridge
 # ============================================================
 
 echo "=========================================="
-echo "  Run A: pi-ollama-cloud"
+echo "  Run A: pi-claude-bridge"
 echo "=========================================="
 
 echo "Fetching usage before..."
@@ -148,7 +148,7 @@ LOGFILE_A="$LOGDIR/usage-test-bridge.ndjson"
 echo ""
 echo "Running bridge conversation..."
 timeout 600 pi --no-session -ne -e "$DIR" \
-  --model "ollama-cloud/$MODEL" \
+  --model "claude-bridge/$MODEL" \
   --mode json \
   "${PROMPT_ARGS[@]}" \
   > "$LOGFILE_A" 2>"$LOGFILE_A.err"
