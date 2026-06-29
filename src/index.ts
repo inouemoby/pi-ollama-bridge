@@ -6,9 +6,58 @@ import type { Base64ImageSource, ContentBlockParam, MessageParam } from "@anthro
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 import { createSession, deleteSession, repairToolPairing } from "cc-session-io";
-import { appendFileSync, mkdirSync, realpathSync, statSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
+
+// --- Ollama Cloud auth (read once at module load) ---
+//
+// The Claude Agent SDK spawns the bundled `claude` binary as a child process and
+// passes our env vars to it. The binary refuses to start without an auth token
+// ("Not logged in · Please run /login"). For Ollama Cloud we must inject:
+//   ANTHROPIC_BASE_URL=https://ollama.com
+//   ANTHROPIC_AUTH_TOKEN=<ollama-cloud api key from auth.json>
+//   ANTHROPIC_API_KEY=""           (empty, so the CLI's OAuth/anthropic paths are
+//                                   not used; the binary falls back to AUTH_TOKEN)
+//
+// `ollama-cloud` is registered as a pi provider (so /login stores the key in
+// ~/.pi/agent/auth.json under entry `ollama-cloud`). We read that file once at
+// module load and keep the key in a module-scope variable. The file path mirrors
+// what pi uses (getAgentDir() = ~/.pi/agent).
+const OLLAMA_CLOUD_BASE_URL = "https://ollama.com";
+const OLLAMA_CLOUD_PROVIDER_ID = "ollama-cloud";
+
+function loadOllamaCloudApiKey(): string | undefined {
+	const authPath = join(homedir(), ".pi", "agent", "auth.json");
+	if (!existsSync(authPath)) return undefined;
+	try {
+		const raw = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, any>;
+		const entry = raw?.[OLLAMA_CLOUD_PROVIDER_ID];
+		if (entry && typeof entry.key === "string" && entry.key.length > 0) return entry.key;
+	} catch (e) {
+		console.error(`ollama-cloud: failed to read ${authPath}:`, e);
+	}
+	return undefined;
+}
+
+let ollamaCloudApiKey: string | undefined = loadOllamaCloudApiKey();
+
+/** Build the env we pass to the SDK's claude binary subprocess. */
+function buildChildEnv(extra?: Record<string, string>): Record<string, string> {
+	const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+	// Force the SDK to talk to Ollama Cloud. The `claude` binary inside the SDK
+	// only uses AUTH_TOKEN when ANTHROPIC_API_KEY is empty.
+	env.ANTHROPIC_BASE_URL = OLLAMA_CLOUD_BASE_URL;
+	env.ANTHROPIC_API_KEY = "";
+	if (ollamaCloudApiKey) {
+		env.ANTHROPIC_AUTH_TOKEN = ollamaCloudApiKey;
+	}
+	// Block any first-party Anthropic cloud MCP servers / auto-compact.
+	env.ENABLE_CLAUDEAI_MCP_SERVERS = "0";
+	env.DISABLE_AUTO_COMPACT = "1";
+	if (extra) Object.assign(env, extra);
+	return env;
+}
 import { PROVIDER_ID, messageContentToText, convertPiMessages } from "./convert.js";
 import { applyLongContext, buildModels, claudeCodeModelId, type LongContextSettings, resolveModel as _resolveModel } from "./models.js";
 import { MCP_SERVER_NAME, MCP_TOOL_PREFIX, extractSkillsBlock } from "./skills.js";
@@ -349,7 +398,7 @@ async function runIsolatedSummary(
 			prompt: promptText,
 			options: {
 				cwd,
-				env: { ...process.env, DISABLE_AUTO_COMPACT: "1", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
+				env: buildChildEnv({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }),
 				tools: [],
 				strictMcpConfig: true,
 				settingSources: [] as SettingSource[],
@@ -1240,7 +1289,7 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 	// also autocompact would double-flush the prompt cache and races pi's
 	// threshold with CC's, including CC's anti-thrashing guard (issue #8).
 	// Manual /compact in CC still works (we never invoke it).
-	const childEnv = { ...process.env, ENABLE_CLAUDEAI_MCP_SERVERS: "0", DISABLE_AUTO_COMPACT: "1" };
+	const childEnv = buildChildEnv();
 	const queryOptions: NonNullable<Parameters<typeof query>[0]["options"]> = {
 		cwd,
 		env: childEnv,
@@ -1483,7 +1532,7 @@ async function promptAndWait(
 		prompt,
 		options: {
 			cwd,
-			env: { ...process.env, ENABLE_CLAUDEAI_MCP_SERVERS: "0", DISABLE_AUTO_COMPACT: "1" },
+			env: buildChildEnv(),
 			permissionMode: "bypassPermissions",
 			...(disallowedTools.length ? { disallowedTools } : {}),
 			...(effort ? { effort } : {}),
@@ -1682,6 +1731,13 @@ export default function (pi: ExtensionAPI) {
 	if (!g[ACTIVE_STREAM_SIMPLE_KEY]) {
 		// First instance: store our streamSimple and register.
 		g[ACTIVE_STREAM_SIMPLE_KEY] = streamClaudeAgentSdk;
+		if (!ollamaCloudApiKey) {
+			console.error(
+				`ollama-cloud: no API key for provider "${OLLAMA_CLOUD_PROVIDER_ID}" in ~/.pi/agent/auth.json. ` +
+					`Run \`pi -p "/login ollama-cloud"\` to set one. The Claude Agent SDK subprocess will fail ` +
+					`with "Not logged in" until then.`,
+			);
+		}
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: "ollama-cloud",
 			apiKey: "not-used",
