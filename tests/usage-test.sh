@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A/B usage comparison: pi-claude-bridge vs Claude Code direct.
+# A/B usage comparison: pi-ollama-cloud vs Claude Code direct.
 # Runs the same conversation through both paths and compares
 # subscription usage delta and token metrics.
 #
@@ -8,7 +8,7 @@
 # Rate limit: the usage endpoint is aggressively limited — don't run repeatedly.
 #
 # Usage: tests/usage-test.sh [model] [turns]
-#   model: claude-haiku-4-5 (default), claude-sonnet-4-6, claude-opus-4-6
+#   model: minimax-m3 (default), kimi-k2.7-code, claude-opus-4-6
 #   turns: number of conversation turns (default: 10)
 
 source "$(dirname "$0")/lib/bash-setup.sh"
@@ -17,7 +17,7 @@ echo "=== usage-test.sh ==="
 
 setup_test_env "usage-test" "none"
 
-MODEL="${1:-claude-haiku-4-5}"
+MODEL="${1:-minimax-m3}"
 NUM_TURNS="${2:-10}"
 
 trap kill_descendants EXIT
@@ -38,8 +38,8 @@ get_usage() {
 # --- Map model to Claude Code model ID ---
 # Claude Code uses different model IDs than the bridge.
 case "$MODEL" in
-  claude-haiku-4-5)   CC_MODEL="claude-haiku-4-5" ;;
-  claude-sonnet-4-6)  CC_MODEL="claude-sonnet-4-6" ;;
+  minimax-m3)   CC_MODEL="minimax-m3" ;;
+  kimi-k2.7-code)  CC_MODEL="kimi-k2.7-code" ;;
   claude-opus-4-6)    CC_MODEL="claude-opus-4-6" ;;
   *)                  CC_MODEL="$MODEL" ;;
 esac
@@ -129,11 +129,11 @@ echo "Turns: $NUM_TURNS"
 echo ""
 
 # ============================================================
-# Run A: pi-claude-bridge
+# Run A: pi-ollama-cloud
 # ============================================================
 
 echo "=========================================="
-echo "  Run A: pi-claude-bridge"
+echo "  Run A: pi-ollama-cloud"
 echo "=========================================="
 
 echo "Fetching usage before..."
@@ -148,7 +148,7 @@ LOGFILE_A="$LOGDIR/usage-test-bridge.ndjson"
 echo ""
 echo "Running bridge conversation..."
 timeout 600 pi --no-session -ne -e "$DIR" \
-  --model "claude-bridge/$MODEL" \
+  --model "ollama-cloud/$MODEL" \
   --mode json \
   "${PROMPT_ARGS[@]}" \
   > "$LOGFILE_A" 2>"$LOGFILE_A.err"

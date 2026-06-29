@@ -2,6 +2,14 @@
 
 ## UNRELEASED
 
+- **Forked from pi-claude-bridge to pi-ollama-bridge** — replaced the Claude model list with Ollama Cloud models. pi's agent loop, compaction, tool dispatch, and session persistence are still routed through the Claude Agent SDK; only the LLM backend changes (Claude → Ollama Cloud via `ANTHROPIC_BASE_URL=https://ollama.com`). The provider id is now `ollama-cloud`. Configure `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (your Ollama Cloud API key), and `ANTHROPIC_API_KEY=""` before launching pi. Available models in `/model`:
+  - `minimax-m3` (default, fast)
+  - `kimi-k2.7-code` (code, 1T params)
+  - `mistral-large-3:675b` (long context)
+  - `glm-5.1` (long-running)
+  - `nemotron-3-ultra` (NVIDIA 500B)
+  - `glm-5.2` (appended, not default)
+
 - **Update: align with pi 0.80 APIs** — use the pi-ai compat catalog import required by pi's extension loader, honor pi's exported `CONFIG_DIR_NAME` for project config, log compaction `reason`/`willRetry` metadata, and raise pi peer/dev dependencies to 0.80+. Also updated Claude Agent SDK within the 0.2 line, TypeBox 1.3, pi dev packages 0.79.9, tsx 4.22, and Node 24 type definitions.
 - **Add: preserve reported reasoning usage tokens** — Claude Code SDK `reasoning_tokens`/`thinking_tokens` counts are now retained on pi usage objects and included in usage debug logs.
 - **Fix: route subagent calls as reentrant queries (issue #19)** — user-only provider calls that arrive while a parent Claude Code query is active now start a nested bridge query instead of being mistaken for empty tool-result delivery, covering foreground and background subagents regardless of inherited context size or pending-handler timing. Also added regression tests that load `@tintinweb/pi-subagents` and rpiv-pi's `codebase-locator`

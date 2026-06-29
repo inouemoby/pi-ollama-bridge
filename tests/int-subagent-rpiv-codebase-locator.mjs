@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reproduction/regression for rpiv-pi codebase-locator subagents hanging while
-// claude-bridge has a parent Claude Code query active.
+// ollama-cloud has a parent Claude Code query active.
 //
 // This intentionally bypasses /skill:discover and invokes the same underlying
 // mechanism directly: @tintinweb/pi-subagents Agent tool + rpiv-pi's pinned
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { createRpcHarness } from "./lib/rpc-harness.mjs";
 
 const DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BRIDGE_MODEL = "claude-bridge/claude-haiku-4-5";
+const BRIDGE_MODEL = "ollama-cloud/minimax-m3";
 const TEST_TIMEOUT = 240_000;
 const SUBAGENTS_DIR = resolve(DIR, "../pi-subagents");
 const RPIV_LOCATOR_FIXTURE = resolve(DIR, "tests/fixtures/rpiv-pi-v0.6.0-agents/codebase-locator.md");

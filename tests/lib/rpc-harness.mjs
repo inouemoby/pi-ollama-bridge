@@ -52,7 +52,7 @@ export function createRpcHarness(opts) {
 		pi = spawn("pi", spawnArgs, {
 			cwd,
 			stdio: ["pipe", "pipe", "pipe"],
-			env: { ...process.env, PATH: cleanPath, CLAUDE_BRIDGE_DEBUG: "1", CLAUDE_BRIDGE_DEBUG_PATH: DEBUG_LOG, ...env },
+			env: { ...process.env, PATH: cleanPath, OLLAMA_CLOUD_DEBUG: "1", OLLAMA_CLOUD_DEBUG_PATH: DEBUG_LOG, ...env },
 		});
 
 		pi.stderr.on("data", (d) => rpcLog.write(d));

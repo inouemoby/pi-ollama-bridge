@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Context continuity test for pi-claude-bridge provider.
+// Context continuity test for pi-ollama-cloud provider.
 // Verifies that switching away from the provider and back correctly
 // preserves conversation context (all messages are flattened into
 // each query, so "missed" messages are automatically included).
@@ -8,8 +8,8 @@
 // isolated mode (clean slate).
 //
 // Requires: pi CLI, Claude Code (for Agent SDK subprocess).
-// Requires: CLAUDE_BRIDGE_TESTING_ALT_PROVIDER (e.g. "minimax")
-// Requires: CLAUDE_BRIDGE_TESTING_ALT_MODEL (e.g. "MiniMax-M2.7-highspeed")
+// Requires: OLLAMA_CLOUD_TESTING_ALT_PROVIDER (e.g. "minimax")
+// Requires: OLLAMA_CLOUD_TESTING_ALT_MODEL (e.g. "MiniMax-M2.7-highspeed")
 
 console.log("=== session-resume-test.mjs ===");
 
@@ -18,21 +18,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRpcHarness, requireEnv } from "./lib/rpc-harness.mjs";
 
-const OTHER_PROVIDER = requireEnv("CLAUDE_BRIDGE_TESTING_ALT_PROVIDER");
-const OTHER_MODEL = requireEnv("CLAUDE_BRIDGE_TESTING_ALT_MODEL");
+const OTHER_PROVIDER = requireEnv("OLLAMA_CLOUD_TESTING_ALT_PROVIDER");
+const OTHER_MODEL = requireEnv("OLLAMA_CLOUD_TESTING_ALT_MODEL");
 
 const TIMEOUT = 180_000;
-const BRIDGE_MODEL = "claude-bridge/claude-haiku-4-5";
+const BRIDGE_MODEL = "ollama-cloud/minimax-m3";
 
 // Random words to avoid Claude memorizing test values across runs
 const WORD_A = `alpha${Math.random().toString(36).slice(2, 6)}`;
 const WORD_B = `beta${Math.random().toString(36).slice(2, 6)}`;
 const WORD_C = `gamma${Math.random().toString(36).slice(2, 6)}`;
 
-const TEST_CWD_PREFIX = join(tmpdir(), "pi-claude-bridge-session-resume-");
+const TEST_CWD_PREFIX = join(tmpdir(), "pi-ollama-cloud-session-resume-");
 const TEST_CWD = mkdtempSync(TEST_CWD_PREFIX);
 mkdirSync(join(TEST_CWD, ".pi"));
-writeFileSync(join(TEST_CWD, ".pi", "claude-bridge.json"), '{"askClaude":{"enabled":true}}\n');
+writeFileSync(join(TEST_CWD, ".pi", "ollama-cloud.json"), '{"askClaude":{"enabled":true}}\n');
 
 // Use harness but with custom args - start on non-provider model
 const harness = createRpcHarness({

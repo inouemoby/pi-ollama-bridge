@@ -1,6 +1,5 @@
 import { calculateCost, StringEnum, type AssistantMessage, type AssistantMessageEventStream, type Context, type Model, type SimpleStreamOptions, type Tool } from "@earendil-works/pi-ai";
 import * as piAi from "@earendil-works/pi-ai";
-import { getModels } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext, compact, keyHint, type CompactionEntry, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createSdkMcpServer, query, type EffortLevel, type SDKMessage, type SDKUserMessage, type SettingSource } from "@anthropic-ai/claude-agent-sdk";
 import type { Base64ImageSource, ContentBlockParam, MessageParam } from "@anthropic-ai/sdk/resources";
@@ -29,11 +28,11 @@ const newAssistantMessageEventStream: () => AssistantMessageEventStream =
 		: () => new _piAi.AssistantMessageEventStream();
 
 // --- Debug logging ---
-// CLAUDE_BRIDGE_DEBUG=1 enables debug logging to ~/.pi/agent/claude-bridge.log
+// OLLAMA_CLOUD_DEBUG=1 enables debug logging to ~/.pi/agent/ollama-cloud.log
 
-const DEBUG = process.env.CLAUDE_BRIDGE_DEBUG === "1";
-const DEBUG_LOG_PATH = process.env.CLAUDE_BRIDGE_DEBUG_PATH || join(homedir(), ".pi", "agent", "claude-bridge.log");
-const DIAG_LOG_PATH = join(homedir(), ".pi", "agent", "claude-bridge-diag.log");
+const DEBUG = process.env.OLLAMA_CLOUD_DEBUG === "1";
+const DEBUG_LOG_PATH = process.env.OLLAMA_CLOUD_DEBUG_PATH || join(homedir(), ".pi", "agent", "ollama-cloud.log");
+const DIAG_LOG_PATH = join(homedir(), ".pi", "agent", "ollama-cloud-diag.log");
 
 // Ensure log directories exist when debug is enabled
 if (DEBUG) {
@@ -60,7 +59,7 @@ function debug(...args: unknown[]) {
 	appendFileSync(DEBUG_LOG_PATH, `[${ts}] [${moduleInstanceId}] ${msg}\n`);
 }
 
-// Per-query CLI debug capture. When CLAUDE_BRIDGE_DEBUG=1, ask the Claude Code
+// Per-query CLI debug capture. When OLLAMA_CLOUD_DEBUG=1, ask the Claude Code
 // CLI subprocess to write its own debug log to a file we choose, and also
 // forward its stderr into our debug stream. Drops straight into the real SDK's
 // Options — see @anthropic-ai/claude-agent-sdk sdk.d.ts:1245 (debug, debugFile,
@@ -110,14 +109,16 @@ function diagDump(label: string, data: Record<string, unknown>) {
 //
 // On session_shutdown (including /reload), clearSession() resets this so a fresh
 // registration can occur for the next session.
-const ACTIVE_STREAM_SIMPLE_KEY = Symbol.for("claude-bridge:activeStreamSimple");
+const ACTIVE_STREAM_SIMPLE_KEY = Symbol.for("ollama-cloud:activeStreamSimple");
 
 const SDK_TO_PI_TOOL_NAME: Record<string, string> = {
 	read: "read", write: "write", edit: "edit", bash: "bash",
 };
 
-// MODELS is buildModels(getModels("anthropic")) — projection kept in models.js.
-const MODELS = buildModels(getModels("anthropic"));
+// MODELS is buildModels() — we synthesize Ollama Cloud model metadata directly
+// rather than projecting pi-ai's anthropic provider entries (which only know
+// about Claude models). See src/models.ts.
+const MODELS = buildModels([]);
 let providerSettings: NonNullable<Config["provider"]> = {};
 let longContextSettings: LongContextSettings = { plan: "pro", longContextExtraUsage: false };
 
@@ -314,7 +315,7 @@ function resultErrorText(message: SDKMessage): string {
 	const result = message as SDKMessage & { subtype?: string; errors?: unknown; error?: unknown };
 	if (Array.isArray(result.errors)) return result.errors.map(String).join("\n");
 	if (typeof result.error === "string") return result.error;
-	return `Claude Code summary failed: ${result.subtype ?? "unknown result"}`;
+	return `Summary failed: ${result.subtype ?? "unknown result"}`;
 }
 
 function isolatedStreamFn(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
@@ -403,7 +404,7 @@ async function runIsolatedSummary(
 
 		const text = finalText || assistantText;
 		if (errorText || !text.trim()) {
-			const msg = errorText ?? "Claude Code summary returned empty text";
+			const msg = errorText ?? "Summary returned empty text";
 			debug(`compact summary: error ${msg}`);
 			stream.push({ type: "error", reason: "error", error: newAssistantOutput(model, "", "error", msg) });
 			stream.end();
@@ -460,8 +461,8 @@ function verifyWrittenSession(
 		piUI?.notify(
 			`Session file issue: ${msg}\n` +
 			`cwd=${cwd} realpath=${safeRealpath(cwd)} CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? "(unset)"}\n` +
-			`Please copy and paste this message into a new issue at https://github.com/elidickinson/pi-claude-bridge/issues/new` +
-			(DEBUG ? ` and attach ${DEBUG_LOG_PATH}` : ` (rerun with CLAUDE_BRIDGE_DEBUG=1 to capture a debug log)`),
+			`Please copy and paste this message into a new issue at https://github.com/elidickinson/pi-ollama-cloud/issues/new` +
+			(DEBUG ? ` and attach ${DEBUG_LOG_PATH}` : ` (rerun with OLLAMA_CLOUD_DEBUG=1 to capture a debug log)`),
 			"warning",
 		);
 		diagDump("session_verify_fail", { msg, jsonlPath, cwd, realpath: safeRealpath(cwd), claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? null });
@@ -1577,8 +1578,8 @@ async function promptAndWait(
 
 // --- Extension registration ---
 
-const DEFAULT_TOOL_DESCRIPTION_FULL = "Delegate to Claude Code for a second opinion or analysis (code review, architecture questions, debugging theories), or to autonomously handle a task. Defaults to read-only mode — use full mode when the user wants to delegate a task that requires changes. Prefer to handle straightforward tasks yourself.";
-const DEFAULT_TOOL_DESCRIPTION = "Delegate to Claude Code for a second opinion or analysis (code review, architecture questions, debugging theories). Read-only — Claude Code can explore the codebase but not make changes. Prefer to handle straightforward tasks yourself.";
+const DEFAULT_TOOL_DESCRIPTION_FULL = "Delegate to Claude Agent SDK (running on Ollama Cloud) for a second opinion or analysis (code review, architecture questions, debugging theories), or to autonomously handle a task. Defaults to read-only mode — use full mode when the user wants to delegate a task that requires changes. Prefer to handle straightforward tasks yourself.";
+const DEFAULT_TOOL_DESCRIPTION = "Delegate to Claude Agent SDK (running on Ollama Cloud) for a second opinion or analysis (code review, architecture questions, debugging theories). Read-only — the SDK can explore the codebase but not make changes. Prefer to handle straightforward tasks yourself.";
 
 const PREVIEW_MAX_CHARS = 1000;
 const PREVIEW_MAX_LINES = 6;
@@ -1586,7 +1587,7 @@ const PREVIEW_MAX_LINES = 6;
 let askClaudeToolName = "AskClaude";
 
 export default function (pi: ExtensionAPI) {
-	// Disable non-essential Claude Code traffic (update checks, MCP registry, telemetry)
+	// Disable non-essential Claude Agent SDK traffic (update checks, MCP registry, telemetry)
 	process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
 
 	const config = loadConfig(process.cwd());
@@ -1622,7 +1623,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => clearSession("session_shutdown"));
 
 	pi.on("session_before_compact", async (event, ctx) => {
-		if (ctx.model?.baseUrl !== "claude-bridge") return undefined;
+		if (ctx.model?.baseUrl !== "ollama-cloud") return undefined;
 		debug(
 			`session_before_compact: takeover reason=${event.reason} willRetry=${event.willRetry} ` +
 			`isSplitTurn=${event.preparation.isSplitTurn} messages=${event.preparation.messagesToSummarize.length} ` +
@@ -1682,16 +1683,16 @@ export default function (pi: ExtensionAPI) {
 		// First instance: store our streamSimple and register.
 		g[ACTIVE_STREAM_SIMPLE_KEY] = streamClaudeAgentSdk;
 		pi.registerProvider(PROVIDER_ID, {
-			baseUrl: "claude-bridge",
+			baseUrl: "ollama-cloud",
 			apiKey: "not-used",
-			api: "claude-bridge",
+			api: "ollama-cloud",
 			models: registeredModels,
 			// Cast: pi-ai AssistantMessageEventStream diamond dep between pi-coding-agent and pi-agent-core
 			streamSimple: streamClaudeAgentSdk as any,
 		});
 	} else {
 		// Subsequent instance (subagent session): skip registration entirely.
-		// The subagent already has access to claude-bridge models via the shared
+		// The subagent already has access to ollama-cloud models via the shared
 		// ModelRegistry from the parent's registration. Calls to those models
 		// will route through the parent's streamSimple via the reentrant
 		// QueryContext stack mechanism.
@@ -1720,7 +1721,7 @@ export default function (pi: ExtensionAPI) {
 		});
 		pi.registerTool<typeof askClaudeParams>({
 			name: askConf?.name ?? "AskClaude",
-			label: askConf?.label ?? "Ask Claude Code",
+			label: askConf?.label ?? "Ask Ollama Cloud",
 			description: askConf?.description ?? (allowFull ? DEFAULT_TOOL_DESCRIPTION_FULL : DEFAULT_TOOL_DESCRIPTION),
 			parameters: askClaudeParams,
 			renderCall(args, theme) {
@@ -1741,15 +1742,15 @@ export default function (pi: ExtensionAPI) {
 			renderResult(result, { expanded, isPartial }, theme) {
 				if (isPartial) {
 					const status = result.content[0]?.type === "text" ? result.content[0].text : "working...";
-					return new Text(theme.fg("mdLink", "◉ Claude Code ") + theme.fg("muted", status), 0, 0);
+					return new Text(theme.fg("mdLink", "◉ Ollama Cloud ") + theme.fg("muted", status), 0, 0);
 				}
 
 				const details = result.details as { prompt?: string; executionTime?: number; actions?: string; error?: boolean } | undefined;
 				const body = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 				let text = details?.error
-					? theme.fg("error", "✗ Claude Code error")
-					: theme.fg("mdLink", "✓ Claude Code");
+					? theme.fg("error", "✗ Ollama Cloud error")
+					: theme.fg("mdLink", "✓ Ollama Cloud");
 
 				if (details?.executionTime) text += ` ${theme.fg("dim", `${(details.executionTime / 1000).toFixed(1)}s`)}`;
 				if (details?.actions) text += ` ${theme.fg("muted", details.actions)}`;
@@ -1770,10 +1771,10 @@ export default function (pi: ExtensionAPI) {
 			},
 			async execute(_id, params, signal, onUpdate, ctx) {
 				// Guard: circular delegation
-				if (ctx.model?.baseUrl === "claude-bridge") {
-					debug("askClaude: blocked circular delegation (active provider is claude-bridge)");
+				if (ctx.model?.baseUrl === "ollama-cloud") {
+					debug("askClaude: blocked circular delegation (active provider is ollama-cloud)");
 					return {
-						content: [{ type: "text" as const, text: "Error: AskClaude cannot be used when the active provider is claude-bridge — you're already running through Claude Code." }],
+						content: [{ type: "text" as const, text: "Error: AskClaude cannot be used when the active provider is ollama-cloud — you're already running through the Claude Agent SDK." }],
 						details: { error: true },
 					};
 				}
@@ -1808,7 +1809,7 @@ export default function (pi: ExtensionAPI) {
 					const actions = buildActionSummary(toolCalls);
 
 					const text = actions
-						? `${result.responseText}\n\n[Claude Code actions: ${actions}]`
+						? `${result.responseText}\n\n[Ollama Cloud actions: ${actions}]`
 						: result.responseText;
 					return {
 						content: [{ type: "text" as const, text }],

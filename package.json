@@ -1,20 +1,21 @@
 {
-  "name": "pi-claude-bridge",
+  "name": "pi-ollama-bridge",
   "version": "0.5.0",
   "private": false,
-  "description": "Pi extension that uses Claude Code (via Agent SDK) as a model provider and adds an AskClaude tool.",
+  "description": "Pi extension that uses the Claude Agent SDK as the agent runtime and Ollama Cloud as the model backend. Forked from pi-claude-bridge with Ollama Cloud models replacing the Claude model list.",
   "keywords": [
     "pi-package",
     "pi",
     "extension",
-    "claude-code",
+    "ollama",
+    "ollama-cloud",
     "claude-agent-sdk"
   ],
-  "author": "Eli Dickinson",
+  "author": "inouemoby",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elidickinson/pi-claude-bridge.git"
+    "url": "git+https://github.com/inouemoby/pi-ollama-bridge.git"
   },
   "engines": {
     "node": ">=20"

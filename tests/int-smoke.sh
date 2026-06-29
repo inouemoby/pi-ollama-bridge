@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Smoke tests for pi-claude-bridge provider.
+# Smoke tests for pi-ollama-cloud provider.
 # Requires: pi CLI, Claude Code (for Agent SDK subprocess).
-# Requires: CLAUDE_BRIDGE_TESTING_ALT_PROVIDER / CLAUDE_BRIDGE_TESTING_ALT_MODEL
+# Requires: OLLAMA_CLOUD_TESTING_ALT_PROVIDER / OLLAMA_CLOUD_TESTING_ALT_MODEL
 
 source "$(dirname "$0")/lib/bash-setup.sh"
 
@@ -9,8 +9,8 @@ echo "=== smoke-test.sh ==="
 
 setup_test_env "smoke-test"
 
-ALT_PROVIDER=$(require_env CLAUDE_BRIDGE_TESTING_ALT_PROVIDER)
-ALT_MODEL=$(require_env CLAUDE_BRIDGE_TESTING_ALT_MODEL)
+ALT_PROVIDER=$(require_env OLLAMA_CLOUD_TESTING_ALT_PROVIDER)
+ALT_MODEL=$(require_env OLLAMA_CLOUD_TESTING_ALT_MODEL)
 
 TIMEOUT=60
 PASS=0
@@ -19,7 +19,7 @@ FAIL=0
 TEST_CWD_PREFIX="$LOGDIR/smoke-cwd."
 TEST_CWD=$(mktemp -d "$TEST_CWD_PREFIX"XXXXXX)
 mkdir -p "$TEST_CWD/.pi"
-printf '{"askClaude":{"enabled":true}}\n' > "$TEST_CWD/.pi/claude-bridge.json"
+printf '{"askClaude":{"enabled":true}}\n' > "$TEST_CWD/.pi/ollama-cloud.json"
 cd "$TEST_CWD"
 cleanup() {
   if [[ "${TEST_CWD:-}" == "$TEST_CWD_PREFIX"* && ${#TEST_CWD} -gt ${#TEST_CWD_PREFIX} && -d "$TEST_CWD" ]]; then
@@ -58,18 +58,18 @@ run() {
 
 run "provider: print mode responds" \
   pi --no-session -ne -e "$DIR" \
-  --model "claude-bridge/claude-sonnet-4-6" \
+  --model "ollama-cloud/kimi-k2.7-code" \
   -p "Reply with just the word 'yes'"
 
 run "provider: --provider flag works" \
   pi --no-session -ne -e "$DIR" \
-  --provider claude-bridge \
+  --provider ollama-cloud \
   -p "Reply with just the word 'yes'"
 
 run "provider: model list includes provider" \
-  bash -c "pi --no-session -ne -e '$DIR' --list-models 2>&1 | grep claude-bridge"
+  bash -c "pi --no-session -ne -e '$DIR' --list-models 2>&1 | grep ollama-cloud"
 
-# AskClaude only registers when a non-claude-bridge provider is active
+# AskClaude only registers when a non-ollama-cloud provider is active
 run "tool: AskClaude registered" \
   bash -c "pi --no-session -ne -e '$DIR' --mode json --provider '$ALT_PROVIDER' --model '$ALT_MODEL' -p 'list your tools' 2>&1 | grep -q AskClaude && echo ok"
 
